@@ -1,0 +1,6 @@
+logging:
+  level: "debug"
+  pretty: true
+security:
+  jwt_secret: "development-jwt-secret-key-not-for-production"
+  bcrypt_cost: 10 # Lower cost for faster development
