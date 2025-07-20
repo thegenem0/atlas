@@ -1,58 +1,66 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/thegenem0/atlas/internal/config"
-	"github.com/thegenem0/atlas/internal/database"
-	"github.com/thegenem0/atlas/internal/middleware"
-	"github.com/thegenem0/atlas/internal/router"
-	"github.com/thegenem0/atlas/internal/services"
+	"github.com/thegenem0/atlas/internal/logging"
+	"github.com/thegenem0/atlas/internal/server"
 )
 
+const version = "0.0.1"
+
 func main() {
-	// ctx := context.Background()
-
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger().Level(zerolog.InfoLevel)
-
-	config, err := config.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("Failed to load config:", err)
+		fmt.Printf("Failed to load configuration: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Configuration
-	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
-	port := config.Server.Port
+	logging.Setup(cfg.Logging.Level, cfg.Logging.Pretty)
 
-	// Database connection
-	db, err := database.NewDatabase(&config.Db, logger)
+	log.Info().
+		Str("version", version).
+		Str("host", cfg.Server.Host).
+		Int("port", cfg.Server.Port).
+		Msg("Starting Atlas Identity Server")
+
+	srv, err := server.New(cfg, version)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to initialize database")
+		log.Fatal().Err(err).Msg("Failed to create server")
 	}
-	defer db.Close()
 
-	// Initialize services
-	authService := services.NewAuthService(db, []byte(jwtSecret))
+	// Start server
+	go func() {
+		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		log.Info().Str("address", addr).Msg("Server starting")
 
-	// Initialize middleware
-	tenantMiddleware := middleware.NewTenantMiddleware(db)
-	authMiddleware := middleware.NewAuthMiddleware(authService)
+		if err := srv.Start(addr); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("Server failed to start")
+		}
+	}()
 
-	// Setup router
-	r := router.NewRouter(db, authService, tenantMiddleware, authMiddleware)
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	logger.Info().Int("port", port).Msg("Server starting")
-	logger.Fatal().Err(http.ListenAndServe(":"+fmt.Sprintf("%d", port), r)).Msg("Server stopped")
-}
+	log.Info().Msg("Server shutting down...")
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Server forced to shutdown")
 	}
-	return defaultValue
+
+	log.Info().Msg("Server exited")
 }
