@@ -19,20 +19,25 @@ type Server struct {
 }
 
 func New(cfg *config.Config, version string) (*Server, error) {
-
 	db, err := database.New(&cfg.Database)
 	if err != nil {
 		return nil, err
 	}
 
-	migrator, err := database.NewMigrator(db, "migrations")
+	migrator, err := database.NewDistributedMigrator(db, "migrations")
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to create migrator")
 	} else {
+
+		if err := migrator.CleanupStaleMigrations(); err != nil {
+			log.Warn().Err(err).Msg("Failed to cleanup stale migrations")
+		}
+
 		if err := migrator.Up(); err != nil {
 			log.Error().Err(err).Msg("Failed to run migrations")
 			return nil, err
 		}
+
 		migrator.Close()
 	}
 

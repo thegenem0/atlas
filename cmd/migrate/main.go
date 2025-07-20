@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: migrate [up|down|version|create]")
+		fmt.Println("Usage: migrate [up|down|version|cleanup|force-unlock]")
 		os.Exit(1)
 	}
 
@@ -33,7 +33,7 @@ func main() {
 	}
 	defer db.Close()
 
-	migrator, err := database.NewMigrator(db, "migrations")
+	migrator, err := database.NewDistributedMigrator(db, "migrations")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create migrator")
 	}
@@ -70,12 +70,31 @@ func main() {
 		}
 		log.Info().Str("name", migrationName).Msg("Migration files created")
 
+	case "cleanup":
+		if err := migrator.CleanupStaleMigrations(); err != nil {
+			log.Fatal().Err(err).Msg("Failed to cleanup stale migrations")
+		}
+		log.Info().Msg("Cleaned up stale migration locks")
+
+	case "force-unlock":
+		fmt.Print("This will forcefully release stale migration locks. Continue? (y/N): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			fmt.Println("Aborted")
+			return
+		}
+
+		if err := migrator.ForceReleaseStaleLocks(); err != nil {
+			log.Fatal().Err(err).Msg("Failed to force unlock migrations")
+		}
+		log.Info().Msg("Forcefully released stale migration locks")
+
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		fmt.Println("Available commands: up, down, version, create")
 		os.Exit(1)
 	}
-
 }
 
 func createMigration(name string) error {
