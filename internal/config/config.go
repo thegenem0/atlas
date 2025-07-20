@@ -93,9 +93,9 @@ func setDefauls() {
 	// Database defaults
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
-	viper.SetDefault("database.name", "atlas_identity")
-	viper.SetDefault("database.user", "atlas")
-	viper.SetDefault("database.password", "atlas")
+	viper.SetDefault("database.name", "atlas_db")
+	viper.SetDefault("database.user", "admin")
+	viper.SetDefault("database.password", "password")
 	viper.SetDefault("database.ssl_mode", "disable")
 	viper.SetDefault("database.max_open_conns", 25)
 	viper.SetDefault("database.max_idle_conns", 5)
